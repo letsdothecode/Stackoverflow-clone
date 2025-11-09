@@ -1,52 +1,56 @@
-import mongoose from 'mongoose';
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
 
-const rewardSchema = new mongoose.Schema({
+const Reward = sequelize.define('reward', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    unique: true,
+    references: {
+      model: 'users',
+      key: 'id'
+    },
+    onDelete: 'CASCADE'
   },
   points: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-  badges: [{
-    name: String,
-    description: String,
-    icon: String,
-    earnedAt: {
-      type: Date,
-      default: Date.now
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    validate: {
+      min: 0
     }
-  }],
+  },
+  badges: {
+    type: DataTypes.TEXT, // Store as JSON string
+    defaultValue: JSON.stringify([]),
+    get() {
+      const value = this.getDataValue('badges');
+      return value ? JSON.parse(value) : [];
+    },
+    set(value) {
+      this.setDataValue('badges', value ? JSON.stringify(value) : JSON.stringify([]));
+    }
+  },
   totalPointsEarned: {
-    type: Number,
-    default: 0
+    type: DataTypes.INTEGER,
+    defaultValue: 0
   },
   totalPointsSpent: {
-    type: Number,
-    default: 0
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.INTEGER,
+    defaultValue: 0
+  }
+}, {
+  tableName: 'rewards',
+  timestamps: true,
+  hooks: {
+    beforeUpdate: (reward) => {
+      reward.updatedAt = new Date();
+    }
   }
 });
-
-// Index for efficient querying
-rewardSchema.index({ userId: 1 });
-
-// Update timestamp on save
-rewardSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  next();
-});
-
-const Reward = mongoose.model('Reward', rewardSchema);
 
 export default Reward;

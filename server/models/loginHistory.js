@@ -1,44 +1,72 @@
-import mongoose from 'mongoose';
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
 
-const loginHistorySchema = new mongoose.Schema({
+const LoginHistory = sequelize.define('loginHistory', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: true, // Allow null for anonymous/failed login attempts
+    references: {
+      model: 'users',
+      key: 'id'
+    },
+    onDelete: 'CASCADE'
   },
   ipAddress: {
-    type: String,
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   browser: {
-    name: String,
-    version: String
+    type: DataTypes.TEXT, // Store as JSON string
+    allowNull: true,
+    get() {
+      const value = this.getDataValue('browser');
+      return value ? JSON.parse(value) : null;
+    },
+    set(value) {
+      this.setDataValue('browser', value ? JSON.stringify(value) : null);
+    }
   },
   os: {
-    name: String,
-    version: String
+    type: DataTypes.TEXT, // Store as JSON string
+    allowNull: true,
+    get() {
+      const value = this.getDataValue('os');
+      return value ? JSON.parse(value) : null;
+    },
+    set(value) {
+      this.setDataValue('os', value ? JSON.stringify(value) : null);
+    }
   },
   device: {
-    type: String,
-    default: 'desktop' // desktop, mobile, tablet
+    type: DataTypes.STRING,
+    defaultValue: 'desktop'
   },
   status: {
-    type: String,
-    enum: ['success', 'failure'],
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      isIn: [['success', 'failure']]
+    }
   },
   failureReason: {
-    type: String
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.STRING,
+    allowNull: true
   }
+}, {
+  tableName: 'login_histories',
+  timestamps: true,
+  createdAt: true,
+  updatedAt: false,
+  indexes: [
+    {
+      fields: ['userId', 'createdAt']
+    }
+  ]
 });
-
-// Index for efficient querying
-loginHistorySchema.index({ userId: 1, createdAt: -1 });
-
-const LoginHistory = mongoose.model('LoginHistory', loginHistorySchema);
 
 export default LoginHistory;

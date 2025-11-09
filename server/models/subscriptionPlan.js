@@ -1,41 +1,62 @@
-import mongoose from 'mongoose';
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
 
-const subscriptionPlanSchema = new mongoose.Schema({
+const SubscriptionPlan = sequelize.define('subscriptionPlan', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   name: {
-    type: String,
-    required: true,
-    enum: ['Free', 'Bronze', 'Silver', 'Gold'],
-    unique: true
+    type: DataTypes.STRING,
+    allowNull: false,
+    unique: true,
+    validate: {
+      isIn: [['Free', 'Bronze', 'Silver', 'Gold']]
+    }
   },
   price: {
-    type: Number,
-    required: true,
-    min: 0
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    validate: {
+      min: 0
+    }
   },
   currency: {
-    type: String,
-    default: 'INR'
+    type: DataTypes.STRING,
+    defaultValue: 'INR'
   },
   maxQuestionsPerDay: {
-    type: Number,
-    required: true,
-    min: 0
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    validate: {
+      min: 0
+    }
   },
-  features: [{
-    type: String
-  }],
+  features: {
+    type: DataTypes.TEXT, // Store as JSON string
+    allowNull: true,
+    get() {
+      const value = this.getDataValue('features');
+      return value ? JSON.parse(value) : [];
+    },
+    set(value) {
+      this.setDataValue('features', value ? JSON.stringify(value) : JSON.stringify([]));
+    }
+  },
   description: {
-    type: String,
-    required: true
+    type: DataTypes.TEXT,
+    allowNull: false
   },
   isActive: {
-    type: Boolean,
-    default: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
   }
+}, {
+  tableName: 'subscription_plans',
+  timestamps: true,
+  createdAt: true,
+  updatedAt: false
 });
 
-export default mongoose.model('SubscriptionPlan', subscriptionPlanSchema);
+export default SubscriptionPlan;

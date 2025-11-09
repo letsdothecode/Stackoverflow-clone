@@ -1,11 +1,12 @@
-import User from '../models/auth.js';
-import PasswordReset from '../models/passwordReset.js';
+import { User, PasswordReset } from '../models/index.js';
 import crypto from 'crypto';
-import nodemailer from 'nodemailer';
+import { createTransport } from 'nodemailer';
 import twilio from 'twilio';
+import { Op } from 'sequelize';
+import bcrypt from 'bcryptjs';
 
 // Configure email transporter
-const transporter = nodemailer.createTransporter({
+const transporter = createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
@@ -49,9 +50,11 @@ const checkDailyResetLimit = async (userId) => {
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
   
-  const resetCount = await PasswordReset.countDocuments({
-    userId,
-    createdAt: { $gte: today, $lt: tomorrow }
+  const resetCount = await PasswordReset.count({
+    where: {
+      userId,
+      createdAt: { [Op.gte]: today, [Op.lt]: tomorrow }
+    }
   });
   
   return resetCount >= 1; // Only 1 reset per day allowed
@@ -75,11 +78,11 @@ export const requestPasswordReset = async (req, res) => {
     let resetValue;
     
     if (email) {
-      user = await User.findOne({ email });
+      user = await User.findOne({ where: { email } });
       resetType = 'email';
       resetValue = email;
     } else if (phone) {
-      user = await User.findOne({ phone });
+      user = await User.findOne({ where: { phone } });
       resetType = 'phone';
       resetValue = phone;
     }
@@ -92,11 +95,12 @@ export const requestPasswordReset = async (req, res) => {
     }
 
     // Check daily reset limit
-    const hasExceededLimit = await checkDailyResetLimit(user._id);
+    const hasExceededLimit = await checkDailyResetLimit(user.id);
     if (hasExceededLimit) {
       return res.status(429).json({
         success: false,
-        message: 'You can only request password reset once per day. Please try again tomorrow.'
+        message: 'Warning: You can only request password reset once per day. You have already used your daily request. Please try again tomorrow.',
+        warning: true
       });
     }
 
@@ -107,15 +111,13 @@ export const requestPasswordReset = async (req, res) => {
     const newPassword = generateRandomPassword();
     
     // Create password reset record
-    const passwordReset = new PasswordReset({
-      userId: user._id,
+    const passwordReset = await PasswordReset.create({
+      userId: user.id,
       resetToken,
       resetType,
       resetValue,
       used: false
     });
-    
-    await passwordReset.save();
 
     // Send reset information via email or SMS
     if (resetType === 'email') {
@@ -195,9 +197,11 @@ export const resetPassword = async (req, res) => {
 
     // Find valid reset token
     const passwordReset = await PasswordReset.findOne({
-      resetToken,
-      used: false,
-      expiresAt: { $gt: new Date() }
+      where: {
+        resetToken,
+        used: false,
+        expiresAt: { [Op.gt]: new Date() }
+      }
     });
 
     if (!passwordReset) {
@@ -219,7 +223,7 @@ export const resetPassword = async (req, res) => {
     const newPassword = generateRandomPassword();
     
     // Update user password
-    const user = await User.findById(passwordReset.userId);
+    const user = await User.findByPk(passwordReset.userId);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -227,8 +231,9 @@ export const resetPassword = async (req, res) => {
       });
     }
 
-    // Hash new password (assuming the User model has a method to set password)
-    user.password = newPassword;
+    // Hash new password
+    const hashpassword = await bcrypt.hash(newPassword, 12);
+    user.password = hashpassword;
     await user.save();
 
     // Mark reset token as used
@@ -298,9 +303,11 @@ export const verifyResetToken = async (req, res) => {
     const { resetToken } = req.params;
     
     const passwordReset = await PasswordReset.findOne({
-      resetToken,
-      used: false,
-      expiresAt: { $gt: new Date() }
+      where: {
+        resetToken,
+        used: false,
+        expiresAt: { [Op.gt]: new Date() }
+      }
     });
 
     if (!passwordReset) {
@@ -325,10 +332,4 @@ export const verifyResetToken = async (req, res) => {
       error: error.message
     });
   }
-};
-
-export default {
-  requestPasswordReset,
-  resetPassword,
-  verifyResetToken
 };

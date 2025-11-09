@@ -1,20 +1,18 @@
-import SubscriptionPlan from '../models/subscriptionPlan.js';
-import UserSubscription from '../models/userSubscription.js';
-import DailyQuestionLimit from '../models/dailyQuestionLimit.js';
-import User from '../models/auth.js';
-import stripe from 'stripe';
+import { SubscriptionPlan, UserSubscription, DailyQuestionLimit, User } from '../models/index.js';
 import Razorpay from 'razorpay';
 import nodemailer from 'nodemailer';
+import dotenv from 'dotenv';
+import { Op } from 'sequelize';
+dotenv.config();
 
-// Initialize payment gateways
-const stripeInstance = stripe(process.env.STRIPE_SECRET_KEY);
+// Initialize payment gateway (Razorpay only)
 const razorpayInstance = new Razorpay({
   key_id: process.env.RAZORPAY_KEY_ID,
   key_secret: process.env.RAZORPAY_KEY_SECRET
 });
 
 // Configure email transporter
-const transporter = nodemailer.createTransporter({
+const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
@@ -24,18 +22,37 @@ const transporter = nodemailer.createTransporter({
 
 // Check if payment time is allowed (10 AM to 11 AM IST)
 const isPaymentTimeAllowed = () => {
-  const now = new Date();
-  const istOffset = 5.5 * 60 * 60 * 1000; // IST is UTC+5:30
-  const istTime = new Date(now.getTime() + istOffset);
-  
-  const hour = istTime.getUTCHours();
-  return hour >= 10 && hour < 11; // 10 AM to 11 AM IST
+  try {
+    const now = new Date();
+    // Get IST time using Intl.DateTimeFormat
+    const istFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Kolkata',
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false
+    });
+    
+    const parts = istFormatter.formatToParts(now);
+    const hour = parseInt(parts.find(part => part.type === 'hour').value, 10);
+    const minute = parseInt(parts.find(part => part.type === 'minute').value, 10);
+    const currentTime = hour * 60 + minute;
+    const startTime = 10 * 60; // 10:00 AM
+    const endTime = 11 * 60; // 11:00 AM
+    
+    return currentTime >= startTime && currentTime < endTime;
+  } catch (error) {
+    console.error('Error checking payment time:', error);
+    return false;
+  }
 };
 
 // Get all subscription plans
 export const getSubscriptionPlans = async (req, res) => {
   try {
-    const plans = await SubscriptionPlan.find({ isActive: true }).sort({ price: 1 });
+    const plans = await SubscriptionPlan.findAll({
+      where: { isActive: true },
+      order: [['price', 'ASC']]
+    });
     
     res.status(200).json({
       success: true,
@@ -54,13 +71,16 @@ export const getSubscriptionPlans = async (req, res) => {
 // Get user's current subscription
 export const getUserSubscription = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = parseInt(req.user.id);
     
     const userSubscription = await UserSubscription.findOne({
-      userId,
-      status: 'active',
-      endDate: { $gt: new Date() }
-    }).populate('planId');
+      where: {
+        userId,
+        status: 'active',
+        endDate: { [Op.gt]: new Date() }
+      },
+      include: [{ model: SubscriptionPlan, as: 'plan' }]
+    });
 
     if (!userSubscription) {
       return res.status(200).json({
@@ -87,8 +107,9 @@ export const getUserSubscription = async (req, res) => {
 // Create subscription payment
 export const createSubscriptionPayment = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const { planId, paymentProvider } = req.body;
+    const userId = parseInt(req.user.id);
+    const planId = parseInt(req.body.planId);
+    const { paymentProvider } = req.body;
 
     // Check if payment time is allowed
     if (!isPaymentTimeAllowed()) {
@@ -99,7 +120,7 @@ export const createSubscriptionPayment = async (req, res) => {
     }
 
     // Validate plan
-    const plan = await SubscriptionPlan.findById(planId);
+    const plan = await SubscriptionPlan.findByPk(planId);
     if (!plan || !plan.isActive) {
       return res.status(400).json({
         success: false,
@@ -109,9 +130,11 @@ export const createSubscriptionPayment = async (req, res) => {
 
     // Check if user already has an active subscription
     const existingSubscription = await UserSubscription.findOne({
-      userId,
-      status: 'active',
-      endDate: { $gt: new Date() }
+      where: {
+        userId,
+        status: 'active',
+        endDate: { [Op.gt]: new Date() }
+      }
     });
 
     if (existingSubscription) {
@@ -122,7 +145,7 @@ export const createSubscriptionPayment = async (req, res) => {
     }
 
     // Get user details
-    const user = await User.findById(userId);
+    const user = await User.findByPk(userId);
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -130,38 +153,20 @@ export const createSubscriptionPayment = async (req, res) => {
       });
     }
 
-    let paymentIntent;
     let orderId;
 
-    // Create payment based on provider
-    if (paymentProvider === 'stripe') {
-      paymentIntent = await stripeInstance.paymentIntents.create({
-        amount: plan.price * 100, // Convert to cents
-        currency: 'inr',
-        metadata: {
-          userId: userId.toString(),
-          planId: planId.toString(),
-          planName: plan.name
-        }
-      });
-    } else if (paymentProvider === 'razorpay') {
-      const order = await razorpayInstance.orders.create({
-        amount: plan.price * 100, // Convert to paise
-        currency: 'INR',
-        receipt: `sub_${userId}_${Date.now()}`,
-        notes: {
-          userId: userId.toString(),
-          planId: planId.toString(),
-          planName: plan.name
-        }
-      });
-      orderId = order.id;
-    } else {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid payment provider'
-      });
-    }
+    // Razorpay-only payment initiation
+    const order = await razorpayInstance.orders.create({
+      amount: parseFloat(plan.price) * 100, // Convert to paise
+      currency: 'INR',
+      receipt: `sub_${userId}_${Date.now()}`,
+      notes: {
+        userId: userId.toString(),
+        planId: planId.toString(),
+        planName: plan.name
+      }
+    });
+    orderId = order.id;
 
     // Calculate subscription dates
     const startDate = new Date();
@@ -169,30 +174,27 @@ export const createSubscriptionPayment = async (req, res) => {
     endDate.setMonth(endDate.getMonth() + 1); // 1 month subscription
 
     // Create pending subscription
-    const userSubscription = new UserSubscription({
+    const userSubscription = await UserSubscription.create({
       userId,
       planId,
       status: 'pending',
       startDate,
       endDate,
-      paymentId: paymentIntent?.id || orderId,
-      paymentProvider,
+      paymentId: orderId,
+      paymentProvider: 'razorpay',
       paymentAmount: plan.price,
       paymentCurrency: 'INR'
     });
-
-    await userSubscription.save();
 
     res.status(200).json({
       success: true,
       message: 'Payment initiated successfully',
       paymentDetails: {
-        provider: paymentProvider,
-        clientSecret: paymentIntent?.client_secret,
-        orderId: orderId,
+        provider: 'razorpay',
+        orderId,
         amount: plan.price,
         currency: 'INR',
-        subscriptionId: userSubscription._id
+        subscriptionId: userSubscription.id
       }
     });
 
@@ -209,10 +211,13 @@ export const createSubscriptionPayment = async (req, res) => {
 // Verify payment and activate subscription
 export const verifySubscriptionPayment = async (req, res) => {
   try {
-    const { subscriptionId, paymentId, paymentProvider, paymentStatus } = req.body;
+    const subscriptionId = parseInt(req.body.subscriptionId);
+    const { paymentId, paymentStatus } = req.body;
 
     // Find subscription
-    const subscription = await UserSubscription.findById(subscriptionId).populate('planId');
+    const subscription = await UserSubscription.findByPk(subscriptionId, {
+      include: [{ model: SubscriptionPlan, as: 'plan' }]
+    });
     if (!subscription) {
       return res.status(404).json({
         success: false,
@@ -220,17 +225,8 @@ export const verifySubscriptionPayment = async (req, res) => {
       });
     }
 
-    // Verify payment based on provider
-    let isPaymentValid = false;
-    
-    if (paymentProvider === 'stripe') {
-      const paymentIntent = await stripeInstance.paymentIntents.retrieve(paymentId);
-      isPaymentValid = paymentIntent.status === 'succeeded';
-    } else if (paymentProvider === 'razorpay') {
-      // For Razorpay, you would typically verify the payment signature
-      // This is a simplified verification
-      isPaymentValid = paymentStatus === 'paid';
-    }
+    // Razorpay-only simplified verification (in production verify signature)
+    const isPaymentValid = paymentStatus === 'paid';
 
     if (!isPaymentValid) {
       // Update subscription as failed
@@ -249,8 +245,8 @@ export const verifySubscriptionPayment = async (req, res) => {
     subscription.paymentStatus = 'completed';
     await subscription.save();
 
-    // Send confirmation email
-    await sendSubscriptionConfirmationEmail(subscription.userId, subscription.planId);
+    // Send confirmation email with invoice
+    await sendSubscriptionConfirmationEmail(subscription.userId, subscription, subscription.plan);
 
     res.status(200).json({
       success: true,
@@ -268,16 +264,23 @@ export const verifySubscriptionPayment = async (req, res) => {
   }
 };
 
-// Send subscription confirmation email
-const sendSubscriptionConfirmationEmail = async (userId, plan) => {
+// Send subscription confirmation email with invoice
+const sendSubscriptionConfirmationEmail = async (userId, subscription, plan) => {
   try {
-    const user = await User.findById(userId);
+    const user = await User.findByPk(userId);
     if (!user) return;
+
+    const invoiceNumber = `INV-${subscription.id}-${Date.now()}`;
+    const paymentDate = new Date().toLocaleDateString('en-IN', { 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    });
 
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: user.email,
-      subject: 'Subscription Activated - StackOverflow Clone',
+      subject: 'Subscription Activated - Invoice - StackOverflow Clone',
       html: `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #f48024;">Subscription Activated!</h2>
@@ -285,14 +288,27 @@ const sendSubscriptionConfirmationEmail = async (userId, plan) => {
           <p>Your subscription has been successfully activated. Here are the details:</p>
           
           <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <h3 style="margin-top: 0;">Invoice Details</h3>
+            <p><strong>Invoice Number:</strong> ${invoiceNumber}</p>
+            <p><strong>Payment Date:</strong> ${paymentDate}</p>
+            <p><strong>Payment ID:</strong> ${subscription.paymentId}</p>
+            <p><strong>Payment Provider:</strong> ${subscription.paymentProvider.toUpperCase()}</p>
+            <hr style="border: none; border-top: 1px solid #ddd; margin: 15px 0;">
             <h3 style="margin-top: 0;">Subscription Details</h3>
             <p><strong>Plan:</strong> ${plan.name}</p>
             <p><strong>Price:</strong> ₹${plan.price}</p>
+            <p><strong>Currency:</strong> ${plan.currency}</p>
             <p><strong>Questions per day:</strong> ${plan.maxQuestionsPerDay === 999 ? 'Unlimited' : plan.maxQuestionsPerDay}</p>
+            <p><strong>Start Date:</strong> ${new Date(subscription.startDate).toLocaleDateString('en-IN')}</p>
+            <p><strong>End Date:</strong> ${new Date(subscription.endDate).toLocaleDateString('en-IN')}</p>
+            ${plan.features && plan.features.length > 0 ? `
             <p><strong>Features:</strong></p>
             <ul>
               ${plan.features.map(feature => `<li>${feature}</li>`).join('')}
             </ul>
+            ` : ''}
+            <hr style="border: none; border-top: 1px solid #ddd; margin: 15px 0;">
+            <p style="text-align: right;"><strong>Total Amount:</strong> ₹${plan.price}</p>
           </div>
           
           <p>Thank you for subscribing!</p>
@@ -310,18 +326,21 @@ const sendSubscriptionConfirmationEmail = async (userId, plan) => {
 // Check if user can post question
 export const canUserPostQuestion = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = parseInt(req.user.id);
 
     // Get user's current subscription
     const userSubscription = await UserSubscription.findOne({
-      userId,
-      status: 'active',
-      endDate: { $gt: new Date() }
-    }).populate('planId');
+      where: {
+        userId,
+        status: 'active',
+        endDate: { [Op.gt]: new Date() }
+      },
+      include: [{ model: SubscriptionPlan, as: 'plan' }]
+    });
 
     if (!userSubscription) {
       // Default to free plan limits
-      const freePlan = await SubscriptionPlan.findOne({ name: 'Free' });
+      const freePlan = await SubscriptionPlan.findOne({ where: { name: 'Free' } });
       if (!freePlan) {
         return res.status(200).json({
           success: true,
@@ -333,15 +352,17 @@ export const canUserPostQuestion = async (req, res) => {
       // Check daily limit for free plan
       const today = new Date();
       today.setHours(0, 0, 0, 0);
+      const todayStr = today.toISOString().split('T')[0];
       
-      let dailyLimit = await DailyQuestionLimit.findOne({ userId, date: today });
+      let dailyLimit = await DailyQuestionLimit.findOne({ 
+        where: { userId, date: todayStr } 
+      });
       if (!dailyLimit) {
-        dailyLimit = new DailyQuestionLimit({
+        dailyLimit = await DailyQuestionLimit.create({
           userId,
-          date: today,
+          date: todayStr,
           maxQuestions: freePlan.maxQuestionsPerDay
         });
-        await dailyLimit.save();
       }
 
       return res.status(200).json({
@@ -356,18 +377,20 @@ export const canUserPostQuestion = async (req, res) => {
     // Check daily limit for subscribed user
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().split('T')[0];
     
-    let dailyLimit = await DailyQuestionLimit.findOne({ userId, date: today });
+    let dailyLimit = await DailyQuestionLimit.findOne({ 
+      where: { userId, date: todayStr } 
+    });
     if (!dailyLimit) {
-      dailyLimit = new DailyQuestionLimit({
+      dailyLimit = await DailyQuestionLimit.create({
         userId,
-        date: today,
-        maxQuestions: userSubscription.planId.maxQuestionsPerDay
+        date: todayStr,
+        maxQuestions: userSubscription.plan.maxQuestionsPerDay
       });
-      await dailyLimit.save();
     } else {
       // Update max questions based on current plan
-      dailyLimit.maxQuestions = userSubscription.planId.maxQuestionsPerDay;
+      dailyLimit.maxQuestions = userSubscription.plan.maxQuestionsPerDay;
       await dailyLimit.save();
     }
 
@@ -376,7 +399,7 @@ export const canUserPostQuestion = async (req, res) => {
       canPost: dailyLimit.questionCount < dailyLimit.maxQuestions,
       currentCount: dailyLimit.questionCount,
       maxQuestions: dailyLimit.maxQuestions,
-      plan: userSubscription.planId.name
+      plan: userSubscription.plan.name
     });
 
   } catch (error) {
@@ -394,8 +417,11 @@ export const incrementQuestionCount = async (userId) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().split('T')[0];
     
-    const dailyLimit = await DailyQuestionLimit.findOne({ userId, date: today });
+    const dailyLimit = await DailyQuestionLimit.findOne({ 
+      where: { userId, date: todayStr } 
+    });
     if (dailyLimit) {
       dailyLimit.questionCount += 1;
       await dailyLimit.save();
@@ -408,12 +434,14 @@ export const incrementQuestionCount = async (userId) => {
 // Cancel subscription
 export const cancelSubscription = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = parseInt(req.user.id);
 
     const subscription = await UserSubscription.findOne({
-      userId,
-      status: 'active',
-      endDate: { $gt: new Date() }
+      where: {
+        userId,
+        status: 'active',
+        endDate: { [Op.gt]: new Date() }
+      }
     });
 
     if (!subscription) {

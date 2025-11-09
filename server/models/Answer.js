@@ -1,34 +1,36 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../config/database.js';
 
-const Question = sequelize.define('question', {
+const Answer = sequelize.define('answer', {
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
     autoIncrement: true
   },
-  questiontitle: {
-    type: DataTypes.STRING,
-    allowNull: false
+  questionId: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'questions',
+      key: 'id'
+    },
+    onDelete: 'CASCADE'
   },
-  questionbody: {
+  answerbody: {
     type: DataTypes.TEXT,
     allowNull: false
   },
-  questiontags: {
-    type: DataTypes.TEXT, // Store as JSON string
-    allowNull: false,
-    get() {
-      const value = this.getDataValue('questiontags');
-      return value ? JSON.parse(value) : [];
-    },
-    set(value) {
-      this.setDataValue('questiontags', value ? JSON.stringify(value) : JSON.stringify([]));
-    }
+  useranswered: {
+    type: DataTypes.STRING,
+    allowNull: true
   },
-  noofanswer: {
+  userid: {
     type: DataTypes.INTEGER,
-    defaultValue: 0
+    allowNull: true,
+    references: {
+      model: 'users',
+      key: 'id'
+    }
   },
   upvote: {
     type: DataTypes.TEXT, // Store as JSON string
@@ -52,27 +54,16 @@ const Question = sequelize.define('question', {
       this.setDataValue('downvote', value ? JSON.stringify(value) : JSON.stringify([]));
     }
   },
-  userposted: {
-    type: DataTypes.STRING,
-    allowNull: true
-  },
-  userid: {
-    type: DataTypes.INTEGER,
-    allowNull: true,
-    references: {
-      model: 'users',
-      key: 'id'
-    }
-  },
-  askedon: {
+  answeredon: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW
   }
 }, {
-  tableName: 'questions',
+  tableName: 'answers',
   timestamps: true,
-  createdAt: 'askedon',
+  createdAt: 'answeredon',
   updatedAt: false
 });
 
-export default Question;
+export default Answer;
+

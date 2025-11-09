@@ -1,49 +1,66 @@
-import mongoose from 'mongoose';
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
 
-const passwordResetSchema = new mongoose.Schema({
+const PasswordReset = sequelize.define('passwordReset', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'users',
+      key: 'id'
+    },
+    onDelete: 'CASCADE'
   },
   resetToken: {
-    type: String,
-    required: true,
+    type: DataTypes.STRING,
+    allowNull: false,
     unique: true
   },
   resetType: {
-    type: String,
-    enum: ['email', 'phone'],
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      isIn: [['email', 'phone']]
+    }
   },
   resetValue: {
-    type: String,
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   used: {
-    type: Boolean,
-    default: false
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
   },
   attempts: {
-    type: Number,
-    default: 0,
-    max: 3 // Maximum 3 attempts per token
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    validate: {
+      max: 3
+    }
   },
   expiresAt: {
-    type: Date,
-    required: true,
-    default: () => new Date(Date.now() + 3600000) // 1 hour from now
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: () => new Date(Date.now() + 3600000) // 1 hour from now
   }
+}, {
+  tableName: 'password_resets',
+  timestamps: true,
+  createdAt: true,
+  updatedAt: false,
+  indexes: [
+    {
+      fields: ['userId', 'createdAt']
+    },
+    {
+      fields: ['expiresAt']
+    }
+  ]
 });
 
-// Index for automatic cleanup
-passwordResetSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-
-// Compound index for daily limit checking
-passwordResetSchema.index({ userId: 1, createdAt: 1 });
-
-export default mongoose.model('PasswordReset', passwordResetSchema);
+export default PasswordReset;

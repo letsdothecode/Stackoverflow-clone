@@ -1,0 +1,15 @@
+# Database
+database.sqlite
+database.sqlite-journal
+
+# Environment variables
+.env
+.env.local
+
+# Node modules
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+

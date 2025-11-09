@@ -1,10 +1,9 @@
-import UserLanguage from '../models/userLanguage.js';
-import User from '../models/auth.js';
+import { UserLanguage, User } from '../models/index.js';
 import nodemailer from 'nodemailer';
 import twilio from 'twilio';
 
 // Configure email transporter
-const transporter = nodemailer.createTransporter({
+const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
@@ -23,12 +22,11 @@ const generateOTP = () => {
 // Get user's language preference
 export const getUserLanguage = async (req, res) => {
   try {
-    const userId = req.user.id;
-    let userLanguage = await UserLanguage.findOne({ userId });
+    const userId = parseInt(req.user.id);
+    let userLanguage = await UserLanguage.findOne({ where: { userId } });
 
     if (!userLanguage) {
-      userLanguage = new UserLanguage({ userId });
-      await userLanguage.save();
+      userLanguage = await UserLanguage.create({ userId });
     }
 
     res.status(200).json({
@@ -48,48 +46,107 @@ export const getUserLanguage = async (req, res) => {
 // Request to change language
 export const requestChangeLanguage = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const { language, method } = req.body; // method can be 'email' or 'sms'
+    const userId = parseInt(req.user.id);
+    const { language } = req.body;
 
-    const user = await User.findById(userId);
+    // Validate language
+    const validLanguages = ['en', 'es', 'hi', 'pt', 'zh', 'fr'];
+    if (!validLanguages.includes(language)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Invalid language. Supported languages: en, es, hi, pt, zh, fr' 
+      });
+    }
+
+    const user = await User.findByPk(userId);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
+    // French requires email OTP, others require mobile OTP
+    const method = language === 'fr' ? 'email' : 'sms';
+    
+    // Check if user has phone for non-French languages
+    if (method === 'sms' && !user.phone) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Phone number is required for language change. Please update your profile with a phone number.' 
+      });
     }
 
     const otp = generateOTP();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // OTP expires in 10 minutes
 
-    let userLanguage = await UserLanguage.findOne({ userId });
+    let userLanguage = await UserLanguage.findOne({ where: { userId } });
     if (!userLanguage) {
-      userLanguage = new UserLanguage({ userId });
+      userLanguage = await UserLanguage.create({ userId });
     }
 
-    userLanguage.otp = { code: otp, expiresAt };
+    userLanguage.otp = { code: otp, expiresAt, language };
     await userLanguage.save();
 
-    // Send OTP via email or SMS
+    let otpSent = false;
+    let devModeOtp = null;
+
+    // Send OTP via email for French, SMS for others
     if (method === 'email') {
-      const mailOptions = {
-        from: process.env.EMAIL_USER,
-        to: user.email,
-        subject: 'Language Change Verification - StackOverflow Clone',
-        text: `Your OTP to change language is: ${otp}`
-      };
-      await transporter.sendMail(mailOptions);
+      if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+        // In development, log the OTP instead of sending email
+        console.log(`[DEV MODE] Email OTP for ${user.email}: ${otp}`);
+        devModeOtp = otp;
+        otpSent = true;
+      } else {
+        const mailOptions = {
+          from: process.env.EMAIL_USER,
+          to: user.email,
+          subject: 'Language Change Verification - StackOverflow Clone',
+          html: `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+              <h2 style="color: #f48024;">Language Change Verification</h2>
+              <p>Hello ${user.name},</p>
+              <p>You requested to change your language to French. Please use the following OTP to verify:</p>
+              <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0; text-align: center;">
+                <strong style="font-size: 24px; letter-spacing: 3px;">${otp}</strong>
+              </div>
+              <p>This OTP will expire in 10 minutes.</p>
+              <p>If you did not request this change, please ignore this email.</p>
+              <p>Best regards,<br>StackOverflow Clone Team</p>
+            </div>
+          `
+        };
+        await transporter.sendMail(mailOptions);
+        otpSent = true;
+      }
     } else if (method === 'sms' && user.phone) {
-      await twilioClient.messages.create({
-        body: `Your StackOverflow Clone language change OTP is: ${otp}`,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: user.phone
-      });
+      if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
+        // In development, log the OTP instead of sending SMS
+        console.log(`[DEV MODE] SMS OTP for ${user.phone}: ${otp}`);
+        devModeOtp = otp;
+        otpSent = true;
+      } else {
+        await twilioClient.messages.create({
+          body: `Your StackOverflow Clone language change OTP is: ${otp}. This OTP expires in 10 minutes.`,
+          from: process.env.TWILIO_PHONE_NUMBER,
+          to: user.phone
+        });
+        otpSent = true;
+      }
     } else {
       return res.status(400).json({ success: false, message: 'Invalid verification method or missing phone number' });
     }
 
-    res.status(200).json({
-      success: true,
-      message: `OTP sent to your ${method}`
-    });
+    if (otpSent) {
+      const responseMessage = devModeOtp 
+        ? `OTP sent to your ${method === 'email' ? 'email' : 'mobile number'}. Development mode - Check console for OTP: ${devModeOtp}`
+        : `OTP sent to your ${method === 'email' ? 'email' : 'mobile number'}`;
+      
+      return res.status(200).json({
+        success: true,
+        message: responseMessage,
+        method,
+        ...(devModeOtp && { devOtp: devModeOtp })
+      });
+    }
 
   } catch (error) {
     console.error('Request change language error:', error);
@@ -104,22 +161,25 @@ export const requestChangeLanguage = async (req, res) => {
 // Verify OTP and change language
 export const verifyAndChangeLanguage = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const { otp, language } = req.body;
+    const userId = parseInt(req.user.id);
+    const { otp } = req.body;
 
-    const userLanguage = await UserLanguage.findOne({ userId });
+    const userLanguage = await UserLanguage.findOne({ where: { userId } });
 
     if (!userLanguage || !userLanguage.otp || userLanguage.otp.code !== otp) {
       return res.status(400).json({ success: false, message: 'Invalid OTP' });
     }
 
-    if (new Date() > userLanguage.otp.expiresAt) {
+    if (new Date() > new Date(userLanguage.otp.expiresAt)) {
       return res.status(400).json({ success: false, message: 'OTP has expired' });
     }
 
+    // Get language from OTP data
+    const language = userLanguage.otp.language || userLanguage.language;
+
     // Update language
     userLanguage.language = language;
-    userLanguage.otp = undefined; // Clear OTP
+    userLanguage.otp = null; // Clear OTP
     await userLanguage.save();
 
     res.status(200).json({

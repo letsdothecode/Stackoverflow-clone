@@ -1,36 +1,48 @@
-import mongoose from 'mongoose';
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
 
-const userLanguageSchema = new mongoose.Schema({
+const UserLanguage = sequelize.define('userLanguage', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-    unique: true
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    unique: true,
+    references: {
+      model: 'users',
+      key: 'id'
+    },
+    onDelete: 'CASCADE'
   },
   language: {
-    type: String,
-    default: 'en',
-    enum: ['en', 'es', 'fr', 'de', 'hi'] // Example languages
+    type: DataTypes.STRING,
+    defaultValue: 'en',
+    validate: {
+      isIn: [['en', 'es', 'hi', 'pt', 'zh', 'fr']] // English, Spanish, Hindi, Portuguese, Chinese, French
+    }
   },
   otp: {
-    code: String,
-    expiresAt: Date
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.TEXT, // Store as JSON string
+    allowNull: true,
+    get() {
+      const value = this.getDataValue('otp');
+      return value ? JSON.parse(value) : null;
+    },
+    set(value) {
+      this.setDataValue('otp', value ? JSON.stringify(value) : null);
+    }
+  }
+}, {
+  tableName: 'user_languages',
+  timestamps: true,
+  hooks: {
+    beforeUpdate: (userLanguage) => {
+      userLanguage.updatedAt = new Date();
+    }
   }
 });
-
-// Index for efficient querying
-userLanguageSchema.index({ userId: 1 });
-
-// Update timestamp on save
-userLanguageSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  next();
-});
-
-const UserLanguage = mongoose.model('UserLanguage', userLanguageSchema);
 
 export default UserLanguage;

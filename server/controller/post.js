@@ -1,10 +1,8 @@
-import Post from '../models/post.js';
-import Friendship from '../models/friendship.js';
-import DailyPostLimit from '../models/dailyPostLimit.js';
-import User from '../models/auth.js';
+import { Post, Friendship, DailyPostLimit, User, PostLike, PostComment, PostShare } from '../models/index.js';
 import { v2 as cloudinary } from 'cloudinary';
 import multer from 'multer';
 import { Readable } from 'stream';
+import { Op } from 'sequelize';
 
 // Configure Cloudinary
 cloudinary.config({
@@ -32,11 +30,13 @@ const upload = multer({
 // Get user's friend count
 const getUserFriendCount = async (userId) => {
   try {
-    const friendCount = await Friendship.countDocuments({
-      $or: [
-        { requester: userId, status: 'accepted' },
-        { recipient: userId, status: 'accepted' }
-      ]
+    const friendCount = await Friendship.count({
+      where: {
+        [Op.or]: [
+          { requester: userId, status: 'accepted' },
+          { recipient: userId, status: 'accepted' }
+        ]
+      }
     });
     return friendCount;
   } catch (error) {
@@ -77,19 +77,23 @@ export const createPost = async (req, res) => {
     today.setHours(0, 0, 0, 0);
 
     // Check or create daily post limit record
-    let dailyLimit = await DailyPostLimit.findOne({ userId, date: today });
+    const todayStr = today.toISOString().split('T')[0];
+    let dailyLimit = await DailyPostLimit.findOne({ 
+      where: { userId, date: todayStr } 
+    });
     
     if (!dailyLimit) {
       const maxPosts = getUserPostLimit(friendCount);
-      dailyLimit = new DailyPostLimit({
+      dailyLimit = await DailyPostLimit.create({
         userId,
-        date: today,
+        date: todayStr,
         maxPosts,
         postCount: 0
       });
     } else {
       // Update max posts based on current friend count
       dailyLimit.maxPosts = getUserPostLimit(friendCount);
+      await dailyLimit.save();
     }
 
     // Check if user has reached daily post limit
@@ -145,22 +149,20 @@ export const createPost = async (req, res) => {
     }
 
     // Create the post
-    const newPost = new Post({
+    const newPost = await Post.create({
       userId,
       content,
       media: uploadedMedia
     });
-
-    await newPost.save();
 
     // Update daily post count
     dailyLimit.postCount += 1;
     await dailyLimit.save();
 
     // Populate user information
-    const populatedPost = await Post.findById(newPost._id)
-      .populate('userId', 'name email profilePicture')
-      .lean();
+    const populatedPost = await Post.findByPk(newPost.id, {
+      include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }]
+    });
 
     res.status(201).json({
       success: true,
@@ -184,18 +186,20 @@ export const getPosts = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
-    const skip = (page - 1) * limit;
+    const offset = (page - 1) * limit;
 
-    const posts = await Post.find()
-      .populate('userId', 'name email profilePicture')
-      .populate('comments.userId', 'name email profilePicture')
-      .populate('likes.userId', 'name email profilePicture')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean();
+    const posts = await Post.findAll({
+      include: [
+        { model: User, as: 'user', attributes: ['id', 'name', 'email'] },
+        { model: PostComment, as: 'comments', include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }] },
+        { model: PostLike, as: 'likes', include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }] }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit,
+      offset
+    });
 
-    const totalPosts = await Post.countDocuments();
+    const totalPosts = await Post.count();
 
     res.status(200).json({
       success: true,
@@ -204,7 +208,7 @@ export const getPosts = async (req, res) => {
         currentPage: page,
         totalPages: Math.ceil(totalPosts / limit),
         totalPosts,
-        hasNextPage: skip + posts.length < totalPosts,
+        hasNextPage: offset + posts.length < totalPosts,
         hasPrevPage: page > 1
       }
     });
@@ -222,10 +226,10 @@ export const getPosts = async (req, res) => {
 // Like a post
 export const likePost = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const postId = req.params.postId;
+    const userId = parseInt(req.user.id);
+    const postId = parseInt(req.params.postId);
 
-    const post = await Post.findById(postId);
+    const post = await Post.findByPk(postId);
     if (!post) {
       return res.status(404).json({
         success: false,
@@ -234,27 +238,31 @@ export const likePost = async (req, res) => {
     }
 
     // Check if user already liked the post
-    const existingLike = post.likes.find(like => like.userId.toString() === userId);
+    const existingLike = await PostLike.findOne({
+      where: { postId, userId }
+    });
     
     if (existingLike) {
       // Unlike the post
-      post.likes = post.likes.filter(like => like.userId.toString() !== userId);
-      await post.save();
+      await existingLike.destroy();
+      
+      const likeCount = await PostLike.count({ where: { postId } });
       
       return res.status(200).json({
         success: true,
         message: 'Post unliked successfully',
-        likes: post.likes.length
+        likes: likeCount
       });
     } else {
       // Like the post
-      post.likes.push({ userId });
-      await post.save();
+      await PostLike.create({ postId, userId });
+      
+      const likeCount = await PostLike.count({ where: { postId } });
       
       return res.status(200).json({
         success: true,
         message: 'Post liked successfully',
-        likes: post.likes.length
+        likes: likeCount
       });
     }
 
@@ -271,8 +279,8 @@ export const likePost = async (req, res) => {
 // Comment on a post
 export const commentOnPost = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const postId = req.params.postId;
+    const userId = parseInt(req.user.id);
+    const postId = parseInt(req.params.postId);
     const { content } = req.body;
 
     if (!content || content.trim().length === 0) {
@@ -282,7 +290,7 @@ export const commentOnPost = async (req, res) => {
       });
     }
 
-    const post = await Post.findById(postId);
+    const post = await Post.findByPk(postId);
     if (!post) {
       return res.status(404).json({
         success: false,
@@ -290,26 +298,24 @@ export const commentOnPost = async (req, res) => {
       });
     }
 
-    const newComment = {
+    const newComment = await PostComment.create({
+      postId,
       userId,
       content: content.trim()
-    };
-
-    post.comments.push(newComment);
-    await post.save();
+    });
 
     // Populate the comment with user info
-    const populatedPost = await Post.findById(postId)
-      .populate('comments.userId', 'name email profilePicture')
-      .lean();
-
-    const addedComment = populatedPost.comments[populatedPost.comments.length - 1];
+    const addedComment = await PostComment.findByPk(newComment.id, {
+      include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }]
+    });
+    
+    const totalComments = await PostComment.count({ where: { postId } });
 
     res.status(201).json({
       success: true,
       message: 'Comment added successfully',
       comment: addedComment,
-      totalComments: populatedPost.comments.length
+      totalComments
     });
 
   } catch (error) {
@@ -325,10 +331,10 @@ export const commentOnPost = async (req, res) => {
 // Share a post
 export const sharePost = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const postId = req.params.postId;
+    const userId = parseInt(req.user.id);
+    const postId = parseInt(req.params.postId);
 
-    const post = await Post.findById(postId);
+    const post = await Post.findByPk(postId);
     if (!post) {
       return res.status(404).json({
         success: false,
@@ -337,7 +343,9 @@ export const sharePost = async (req, res) => {
     }
 
     // Check if user already shared the post
-    const existingShare = post.shares.find(share => share.userId.toString() === userId);
+    const existingShare = await PostShare.findOne({
+      where: { postId, userId }
+    });
     
     if (existingShare) {
       return res.status(400).json({
@@ -346,13 +354,14 @@ export const sharePost = async (req, res) => {
       });
     }
 
-    post.shares.push({ userId });
-    await post.save();
+    await PostShare.create({ postId, userId });
+    
+    const shareCount = await PostShare.count({ where: { postId } });
 
     res.status(200).json({
       success: true,
       message: 'Post shared successfully',
-      shares: post.shares.length
+      shares: shareCount
     });
 
   } catch (error) {
@@ -368,15 +377,18 @@ export const sharePost = async (req, res) => {
 // Get user's daily posting status
 export const getDailyPostStatus = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = parseInt(req.user.id);
     
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().split('T')[0];
 
     const friendCount = await getUserFriendCount(userId);
     const maxPosts = getUserPostLimit(friendCount);
 
-    let dailyLimit = await DailyPostLimit.findOne({ userId, date: today });
+    let dailyLimit = await DailyPostLimit.findOne({ 
+      where: { userId, date: todayStr } 
+    });
     
     if (!dailyLimit) {
       dailyLimit = {

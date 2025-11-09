@@ -7,7 +7,7 @@ export default function App({ Component, pageProps }: AppProps) {
   return (
     <>
       <Head>
-        <title>Code-Quest</title>
+        <title>stack-overflow</title>
       </Head>
       <AuthProvider>
         <ToastContainer />

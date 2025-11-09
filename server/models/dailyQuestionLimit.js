@@ -1,40 +1,52 @@
-import mongoose from 'mongoose';
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
 
-const dailyQuestionLimitSchema = new mongoose.Schema({
+const DailyQuestionLimit = sequelize.define('dailyQuestionLimit', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'users',
+      key: 'id'
+    },
+    onDelete: 'CASCADE'
   },
   date: {
-    type: Date,
-    required: true,
-    default: () => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return today;
-    }
+    type: DataTypes.DATEONLY,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
   },
   questionCount: {
-    type: Number,
-    default: 0,
-    min: 0
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    validate: {
+      min: 0
+    }
   },
   maxQuestions: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    validate: {
+      min: 0
+    }
   }
+}, {
+  tableName: 'daily_question_limits',
+  timestamps: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['userId', 'date']
+    },
+    {
+      fields: ['date']
+    }
+  ]
 });
 
-// Compound index for daily limits
-dailyQuestionLimitSchema.index({ userId: 1, date: 1 }, { unique: true });
-
-// TTL index for automatic cleanup (keep records for 30 days)
-dailyQuestionLimitSchema.index({ date: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 });
-
-export default mongoose.model('DailyQuestionLimit', dailyQuestionLimitSchema);
+export default DailyQuestionLimit;

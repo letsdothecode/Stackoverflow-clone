@@ -1,34 +1,52 @@
-import mongoose from 'mongoose';
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
 
-const dailyPostLimitSchema = new mongoose.Schema({
+const DailyPostLimit = sequelize.define('dailyPostLimit', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-    unique: true
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'users',
+      key: 'id'
+    },
+    onDelete: 'CASCADE'
   },
   postCount: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-  date: {
-    type: Date,
-    required: true,
-    default: () => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return today;
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    validate: {
+      min: 0
     }
   },
+  date: {
+    type: DataTypes.DATEONLY,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
+  },
   maxPosts: {
-    type: Number,
-    default: 1,
-    min: 0
+    type: DataTypes.INTEGER,
+    defaultValue: 1,
+    validate: {
+      min: 0
+    }
   }
+}, {
+  tableName: 'daily_post_limits',
+  timestamps: false,
+  indexes: [
+    {
+      unique: true,
+      fields: ['userId', 'date']
+    },
+    {
+      fields: ['date']
+    }
+  ]
 });
 
-dailyPostLimitSchema.index({ userId: 1, date: 1 }, { unique: true });
-dailyPostLimitSchema.index({ date: 1 }, { expireAfterSeconds: 86400 });
-
-export default mongoose.model('DailyPostLimit', dailyPostLimitSchema);
+export default DailyPostLimit;

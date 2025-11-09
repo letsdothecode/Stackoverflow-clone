@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axiosInstance from '../lib/axiosinstance';
 
 const LanguageSettings = () => {
   const [currentLanguage, setCurrentLanguage] = useState('en');
   const [targetLanguage, setTargetLanguage] = useState('en');
-  const [verificationMethod, setVerificationMethod] = useState('email');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -17,15 +16,28 @@ const LanguageSettings = () => {
 
   const fetchUserLanguage = async () => {
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('http://localhost:5000/language', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setCurrentLanguage(response.data.language);
-      setTargetLanguage(response.data.language);
+      const response = await axiosInstance.get('/language');
+      if (response.data && response.data.success && response.data.language) {
+        setCurrentLanguage(response.data.language);
+        setTargetLanguage(response.data.language);
+      } else {
+        setError(response.data?.message || 'Error loading language settings');
+      }
     } catch (error) {
       console.error('Error fetching user language:', error);
-      setError('Error loading language settings');
+      if (error.response) {
+        // Server responded with error status
+        if (error.response.status === 401) {
+          setError('Please login to access language settings');
+        } else {
+          setError(error.response.data?.message || 'Error loading language settings');
+        }
+      } else if (error.request) {
+        // Request made but no response received
+        setError('Unable to connect to server. Please check if the backend is running.');
+      } else {
+        setError('An unexpected error occurred');
+      }
     } finally {
       setLoading(false);
     }
@@ -35,51 +47,72 @@ const LanguageSettings = () => {
     setMessage('');
     setError('');
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.post(
-        'http://localhost:5000/language/request-change',
+      // Verification method is automatically determined by backend:
+      // French = email, all others = SMS
+      const response = await axiosInstance.post(
+        '/language/request-change',
         {
-          language: targetLanguage,
-          method: verificationMethod
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` }
+          language: targetLanguage
         }
       );
-      if (response.data.success) {
+      if (response.data && response.data.success) {
         setOtpSent(true);
-        setMessage(response.data.message);
+        // If dev mode OTP is returned, show it in the message
+        const message = response.data.devOtp 
+          ? `${response.data.message}\n\nDevelopment Mode OTP: ${response.data.devOtp}`
+          : response.data.message || 'OTP sent successfully';
+        setMessage(message);
+        // Auto-fill OTP in dev mode for convenience
+        if (response.data.devOtp) {
+          setOtp(response.data.devOtp);
+        }
+      } else {
+        setError(response.data?.message || 'Error sending OTP');
       }
     } catch (error) {
       console.error('Error requesting language change:', error);
-      setError(error.response?.data?.message || 'Error sending OTP');
+      if (error.response) {
+        setError(error.response.data?.message || 'Error sending OTP');
+      } else if (error.request) {
+        setError('Unable to connect to server. Please check if the backend is running.');
+      } else {
+        setError('An unexpected error occurred');
+      }
     }
   };
 
   const handleVerifyAndChange = async () => {
+    if (!otp || otp.trim() === '') {
+      setError('Please enter the OTP');
+      return;
+    }
     setMessage('');
     setError('');
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.post(
-        'http://localhost:5000/language/verify-change',
+      const response = await axiosInstance.post(
+        '/language/verify-change',
         {
-          otp,
-          language: targetLanguage
-        },
-        {
-          headers: { Authorization: `Bearer ${token}` }
+          otp: otp.trim()
         }
       );
-      if (response.data.success) {
-        setMessage(response.data.message);
+      if (response.data && response.data.success) {
+        setMessage(response.data.message || 'Language changed successfully');
         setCurrentLanguage(response.data.language);
         setOtpSent(false);
         setOtp('');
+        setTargetLanguage(response.data.language);
+      } else {
+        setError(response.data?.message || 'Error changing language');
       }
     } catch (error) {
       console.error('Error verifying OTP:', error);
-      setError(error.response?.data?.message || 'Error changing language');
+      if (error.response) {
+        setError(error.response.data?.message || 'Error changing language');
+      } else if (error.request) {
+        setError('Unable to connect to server. Please check if the backend is running.');
+      } else {
+        setError('An unexpected error occurred');
+      }
     }
   };
 
@@ -123,21 +156,24 @@ const LanguageSettings = () => {
               <option value="en">English</option>
               <option value="es">Spanish</option>
               <option value="fr">French</option>
-              <option value="de">German</option>
               <option value="hi">Hindi</option>
+              <option value="pt">Portuguese</option>
+              <option value="zh">Chinese</option>
             </select>
           </div>
 
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700">Verification Method</label>
-            <select
-              value={verificationMethod}
-              onChange={(e) => setVerificationMethod(e.target.value)}
-              className="w-full border border-gray-300 rounded px-3 py-2 mt-1"
-            >
-              <option value="email">Email</option>
-              <option value="sms">SMS</option>
-            </select>
+            <div className="w-full border border-gray-300 rounded px-3 py-2 mt-1 bg-gray-50">
+              <span className="text-gray-700">
+                {targetLanguage === 'fr' ? 'Email' : 'SMS'}
+                <span className="text-sm text-gray-500 ml-2">
+                  ({targetLanguage === 'fr' 
+                    ? 'French language requires email verification' 
+                    : 'Requires phone number in your profile'})
+                </span>
+              </span>
+            </div>
           </div>
 
           <button

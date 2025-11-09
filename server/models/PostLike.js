@@ -1,13 +1,22 @@
 import { DataTypes } from 'sequelize';
 import sequelize from '../config/database.js';
 
-const Friendship = sequelize.define('friendship', {
+const PostLike = sequelize.define('postLike', {
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
     autoIncrement: true
   },
-  requester: {
+  postId: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'posts',
+      key: 'id'
+    },
+    onDelete: 'CASCADE'
+  },
+  userId: {
     type: DataTypes.INTEGER,
     allowNull: false,
     references: {
@@ -15,38 +24,17 @@ const Friendship = sequelize.define('friendship', {
       key: 'id'
     },
     onDelete: 'CASCADE'
-  },
-  recipient: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    references: {
-      model: 'users',
-      key: 'id'
-    },
-    onDelete: 'CASCADE'
-  },
-  status: {
-    type: DataTypes.STRING,
-    defaultValue: 'pending',
-    validate: {
-      isIn: [['pending', 'accepted', 'blocked']]
-    }
   }
 }, {
-  tableName: 'friendships',
+  tableName: 'post_likes',
   timestamps: true,
   indexes: [
     {
       unique: true,
-      fields: ['requester', 'recipient']
-    },
-    {
-      fields: ['recipient', 'status']
-    },
-    {
-      fields: ['requester', 'status']
+      fields: ['postId', 'userId']
     }
   ]
 });
 
-export default Friendship;
+export default PostLike;
+

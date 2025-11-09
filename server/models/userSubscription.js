@@ -1,71 +1,83 @@
-import mongoose from 'mongoose';
+import { DataTypes } from 'sequelize';
+import sequelize from '../config/database.js';
 
-const userSubscriptionSchema = new mongoose.Schema({
+const UserSubscription = sequelize.define('userSubscription', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
   userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true,
-    unique: true
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'users',
+      key: 'id'
+    },
+    onDelete: 'CASCADE'
   },
   planId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'SubscriptionPlan',
-    required: true
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    references: {
+      model: 'subscription_plans',
+      key: 'id'
+    }
   },
   status: {
-    type: String,
-    enum: ['active', 'expired', 'cancelled', 'pending'],
-    default: 'pending'
+    type: DataTypes.STRING,
+    defaultValue: 'pending',
+    validate: {
+      isIn: [['active', 'expired', 'cancelled', 'pending']]
+    }
   },
   startDate: {
-    type: Date,
-    required: true,
-    default: Date.now
+    type: DataTypes.DATE,
+    allowNull: false,
+    defaultValue: DataTypes.NOW
   },
   endDate: {
-    type: Date,
-    required: true
+    type: DataTypes.DATE,
+    allowNull: false
   },
   paymentId: {
-    type: String,
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false
   },
   paymentProvider: {
-    type: String,
-    enum: ['stripe', 'razorpay'],
-    required: true
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: {
+      isIn: [['stripe', 'razorpay']]
+    }
   },
   paymentAmount: {
-    type: Number,
-    required: true
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false
   },
   paymentCurrency: {
-    type: String,
-    default: 'INR'
+    type: DataTypes.STRING,
+    defaultValue: 'INR'
   },
   paymentStatus: {
-    type: String,
-    enum: ['pending', 'completed', 'failed', 'refunded'],
-    default: 'pending'
+    type: DataTypes.STRING,
+    defaultValue: 'pending',
+    validate: {
+      isIn: [['pending', 'completed', 'failed', 'refunded']]
+    }
   },
   autoRenew: {
-    type: Boolean,
-    default: true
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
+  }
+}, {
+  tableName: 'user_subscriptions',
+  timestamps: true,
+  hooks: {
+    beforeUpdate: (subscription) => {
+      subscription.updatedAt = new Date();
+    }
   }
 });
 
-// Index for efficient querying
-userSubscriptionSchema.index({ userId: 1 });
-userSubscriptionSchema.index({ planId: 1 });
-userSubscriptionSchema.index({ status: 1 });
-userSubscriptionSchema.index({ endDate: 1 });
-
-export default mongoose.model('UserSubscription', userSubscriptionSchema);
+export default UserSubscription;
