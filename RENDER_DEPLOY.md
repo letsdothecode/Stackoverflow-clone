@@ -296,6 +296,24 @@ If your build takes too long:
 4. If using `render.yaml`, ensure `startCommand` is `npm start`
 5. Redeploy after making these changes
 
+### Module Not Found Error (Case Sensitivity)
+
+**Issue**: `Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/opt/render/project/src/server/models/Question.js'`
+
+**Cause**: Linux (which Render uses) is case-sensitive for file names. If your files are named `question.js` (lowercase) but you're importing `Question.js` (uppercase), it will fail.
+
+**Solution**:
+1. Check your actual file names in the `server/models/` directory
+2. Ensure all imports in `server/models/index.js` match the exact file names (case-sensitive)
+3. Common fixes:
+   - `Question.js` → `question.js`
+   - `Post.js` → `post.js`
+   - `Reward.js` → `reward.js`
+   - `SubscriptionPlan.js` → `subscriptionPlan.js`
+   - etc.
+4. Test locally on Linux or use a case-sensitive file system to catch these issues early
+5. Redeploy after fixing the imports
+
 ## Free Tier Limits
 
 Render's free tier includes:
