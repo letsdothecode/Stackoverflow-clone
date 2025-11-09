@@ -186,6 +186,23 @@ Vercel automatically provides:
 
 ## Troubleshooting
 
+### Invalid Request Error: rootDirectory Property
+
+**Issue**: `Invalid request: should NOT have additional property 'rootDirectory'. Please remove it.`
+
+**Cause**: The `rootDirectory` property is set in both the Vercel dashboard UI and in `vercel.json` file, causing a conflict.
+
+**Solution**:
+1. Remove `rootDirectory` from `vercel.json` (or delete the file if it only contains rootDirectory)
+2. Set the Root Directory only in the Vercel dashboard UI:
+   - Go to your project settings in Vercel
+   - Navigate to "Settings" → "General"
+   - Set "Root Directory" to `stack`
+   - Save changes
+3. Redeploy your project
+
+**Note**: Vercel prefers setting the root directory in the UI rather than in the configuration file to avoid conflicts.
+
 ### Build Fails on Vercel
 
 **Issue**: Build command fails
@@ -193,7 +210,7 @@ Vercel automatically provides:
 - Check build logs in Vercel dashboard
 - Verify Node.js version (Vercel uses Node 18+ by default)
 - Ensure all dependencies are in `package.json`
-- Check that root directory is set to `stack`
+- Check that root directory is set to `stack` in the UI (not in vercel.json)
 - Verify `stack/package.json` exists and has correct scripts
 
 ### Frontend Can't Connect to Backend
@@ -238,17 +255,18 @@ Vercel automatically provides:
 
 ### Custom Build Settings
 
-If you need custom build settings, create `vercel.json` in the root:
+**Important**: Do NOT include `rootDirectory` in `vercel.json` if you're setting it in the Vercel dashboard UI. This will cause an error: "Invalid request: should NOT have additional property 'rootDirectory'."
+
+If you need custom build settings (which is usually not necessary for Next.js), you can create `vercel.json` in the root, but **only set it in the UI**, not in the file:
 
 ```json
 {
-  "buildCommand": "cd stack && npm run build",
-  "outputDirectory": "stack/.next",
-  "installCommand": "cd stack && npm install",
-  "framework": null,
-  "rootDirectory": "stack"
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next"
 }
 ```
+
+**Recommended**: Set the Root Directory in the Vercel dashboard UI instead of using vercel.json for this setting.
 
 ### Serverless Functions (Optional)
 
