@@ -1,0 +1,7 @@
+[build]
+  base = "stack"
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "18"

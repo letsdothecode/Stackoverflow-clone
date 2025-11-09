@@ -1,10 +1,11 @@
 import React from 'react';
-import PublicSpace from '../../components/PublicSpace';
+import dynamic from 'next/dynamic';
+
+// Disable SSR for PublicSpace since it fetches data client-side
+const PublicSpace = dynamic(() => import('../../components/PublicSpace'), {
+  ssr: false,
+});
 
 export default function PublicSpacePage() {
-  return (
-    <div className="min-h-screen bg-gray-50">
-      <PublicSpace />
-    </div>
-  );
+  return <PublicSpace />;
 }

@@ -1,0 +1,8 @@
+server/
+*.md
+start-*.ps1
+node_modules/
+.env
+.env.local
+.env*.local
+

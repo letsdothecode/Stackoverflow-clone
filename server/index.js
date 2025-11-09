@@ -16,7 +16,52 @@ const app = express();
 dotenv.config();
 app.use(express.json({ limit: "30mb", extended: true }));
 app.use(express.urlencoded({ limit: "30mb", extended: true }));
-app.use(cors());
+
+// CORS configuration - allow requests from Netlify and localhost
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // List of allowed origins
+    const allowedOrigins = [
+      'http://localhost:3000',
+      'http://localhost:3001',
+      process.env.FRONTEND_URL,
+      process.env.NETLIFY_URL,
+      process.env.VERCEL_URL,
+      process.env.RENDER_URL,
+      // Add your deployment URLs here or set them via environment variables
+      /\.netlify\.app$/, // Allow all Netlify preview deployments
+      /\.vercel\.app$/, // Allow all Vercel preview deployments
+      /\.vercel\.dev$/, // Allow Vercel development deployments
+      /\.onrender\.com$/, // Allow all Render deployments
+    ].filter(Boolean);
+    
+    // Check if origin is allowed
+    if (allowedOrigins.some(allowed => {
+      if (typeof allowed === 'string') {
+        return origin === allowed;
+      } else if (allowed instanceof RegExp) {
+        return allowed.test(origin);
+      }
+      return false;
+    })) {
+      callback(null, true);
+    } else {
+      // In development, allow all origins
+      if (process.env.NODE_ENV !== 'production') {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    }
+  },
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+app.use(cors(corsOptions));
 
 // Trust proxy to get real IP address
 app.set('trust proxy', true);

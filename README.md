@@ -157,6 +157,33 @@ The application requires JWT authentication. Make sure to set `JWT_SECRET` in yo
 3. In development mode, OTP will be shown in the response message
 4. For production, configure email (French) or SMS (other languages) in `.env`
 
+## Deployment
+
+This application can be deployed to various platforms. See the deployment guides for detailed instructions:
+
+### Frontend Deployment
+- **[Vercel Deployment Guide](VERCEL_DEPLOY.md)** ⭐ Recommended (Best for Next.js)
+- [Netlify Deployment Guide](NETLIFY_DEPLOY.md)
+
+### Backend Deployment
+- **[Render Deployment Guide](RENDER_DEPLOY.md)** ⭐ Recommended (Free tier, persistent storage)
+- [Railway Deployment Guide](RAILWAY_DEPLOY.md)
+
+### Complete Guide
+- [Complete Deployment Guide](DEPLOYMENT_GUIDE.md)
+
+### Quick Deployment Summary
+
+1. **Deploy Backend** (Render, Railway, or Heroku):
+   - Set root directory to `server`
+   - Add environment variables (see RENDER_DEPLOY.md or RAILWAY_DEPLOY.md)
+   - Get your backend URL
+
+2. **Deploy Frontend** (Vercel or Netlify):
+   - Set root directory to `stack`
+   - Add environment variable: `NEXT_PUBLIC_BACKEND_URL=<your-backend-url>`
+   - Deploy!
+
 ## License
 
 ISC
