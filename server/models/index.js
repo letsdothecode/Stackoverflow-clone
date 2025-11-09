@@ -1,20 +1,20 @@
 import sequelize from '../config/database.js';
 import User from './User.js';
-import Question from './Question.js';
+import Question from './question.js';
 import Answer from './Answer.js';
-import Post from './Post.js';
+import Post from './post.js';
 import PostLike from './PostLike.js';
 import PostComment from './PostComment.js';
 import PostShare from './PostShare.js';
-import Reward from './Reward.js';
-import SubscriptionPlan from './SubscriptionPlan.js';
-import UserSubscription from './UserSubscription.js';
-import Friendship from './Friendship.js';
-import DailyPostLimit from './DailyPostLimit.js';
-import DailyQuestionLimit from './DailyQuestionLimit.js';
-import PasswordReset from './PasswordReset.js';
-import LoginHistory from './LoginHistory.js';
-import UserLanguage from './UserLanguage.js';
+import Reward from './reward.js';
+import SubscriptionPlan from './subscriptionPlan.js';
+import UserSubscription from './userSubscription.js';
+import Friendship from './friendship.js';
+import DailyPostLimit from './dailyPostLimit.js';
+import DailyQuestionLimit from './dailyQuestionLimit.js';
+import PasswordReset from './passwordReset.js';
+import LoginHistory from './loginHistory.js';
+import UserLanguage from './userLanguage.js';
 
 // Define relationships
 // User relationships
