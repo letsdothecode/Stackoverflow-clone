@@ -314,6 +314,27 @@ If your build takes too long:
 4. Test locally on Linux or use a case-sensitive file system to catch these issues early
 5. Redeploy after fixing the imports
 
+### Razorpay/Email/SMS Configuration Error
+
+**Issue**: `Error: 'key_id' or 'oauthToken' is mandatory` or similar errors for email/SMS
+
+**Cause**: Razorpay, email (nodemailer), and SMS (Twilio) services are being initialized at module load time, but the required environment variables are not set.
+
+**Solution**:
+1. These services are now **optional** - the server will start even without them
+2. The server will log warnings if services are not configured:
+   - `⚠️ Razorpay credentials not found. Payment features will be disabled.`
+   - `⚠️ Email credentials not found. Email features will be disabled.`
+   - `⚠️ Twilio credentials not found. SMS features will be disabled.`
+3. To enable these services, add the required environment variables:
+   - **Razorpay**: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`
+   - **Email**: `EMAIL_USER`, `EMAIL_PASS`
+   - **SMS**: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`
+4. Services that require these will return appropriate error messages if not configured
+5. The server will continue to work for other features (authentication, questions, answers, etc.)
+
+**Note**: These are optional services. Your server will work fine without them - only payment, email, and SMS features will be disabled.
+
 ## Free Tier Limits
 
 Render's free tier includes:
