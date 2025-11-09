@@ -5,20 +5,40 @@ import dotenv from 'dotenv';
 import { Op } from 'sequelize';
 dotenv.config();
 
-// Initialize payment gateway (Razorpay only)
-const razorpayInstance = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET
-});
-
-// Configure email transporter
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+// Initialize payment gateway (Razorpay only) - conditional initialization
+let razorpayInstance = null;
+if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+  try {
+    razorpayInstance = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET
+    });
+    console.log('✅ Razorpay initialized successfully');
+  } catch (error) {
+    console.warn('⚠️ Razorpay initialization failed:', error.message);
   }
-});
+} else {
+  console.warn('⚠️ Razorpay credentials not found. Payment features will be disabled.');
+}
+
+// Configure email transporter - conditional initialization
+let transporter = null;
+if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+  try {
+    transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+    console.log('✅ Email transporter initialized successfully');
+  } catch (error) {
+    console.warn('⚠️ Email transporter initialization failed:', error.message);
+  }
+} else {
+  console.warn('⚠️ Email credentials not found. Email features will be disabled.');
+}
 
 // Check if payment time is allowed (10 AM to 11 AM IST)
 const isPaymentTimeAllowed = () => {
@@ -155,6 +175,14 @@ export const createSubscriptionPayment = async (req, res) => {
 
     let orderId;
 
+    // Check if Razorpay is configured
+    if (!razorpayInstance) {
+      return res.status(503).json({
+        success: false,
+        message: 'Payment gateway is not configured. Please contact administrator.'
+      });
+    }
+
     // Razorpay-only payment initiation
     const order = await razorpayInstance.orders.create({
       amount: parseFloat(plan.price) * 100, // Convert to paise
@@ -245,8 +273,10 @@ export const verifySubscriptionPayment = async (req, res) => {
     subscription.paymentStatus = 'completed';
     await subscription.save();
 
-    // Send confirmation email with invoice
-    await sendSubscriptionConfirmationEmail(subscription.userId, subscription, subscription.plan);
+    // Send confirmation email with invoice (if email is configured)
+    if (transporter) {
+      await sendSubscriptionConfirmationEmail(subscription.userId, subscription, subscription.plan);
+    }
 
     res.status(200).json({
       success: true,
@@ -267,6 +297,11 @@ export const verifySubscriptionPayment = async (req, res) => {
 // Send subscription confirmation email with invoice
 const sendSubscriptionConfirmationEmail = async (userId, subscription, plan) => {
   try {
+    if (!transporter) {
+      console.warn('Email transporter not configured. Skipping email send.');
+      return;
+    }
+
     const user = await User.findByPk(userId);
     if (!user) return;
 

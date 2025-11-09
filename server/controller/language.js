@@ -2,17 +2,37 @@ import { UserLanguage, User } from '../models/index.js';
 import nodemailer from 'nodemailer';
 import twilio from 'twilio';
 
-// Configure email transporter
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+// Configure email transporter - conditional initialization
+let transporter = null;
+if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+  try {
+    transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+    console.log('✅ Email transporter initialized successfully (language controller)');
+  } catch (error) {
+    console.warn('⚠️ Email transporter initialization failed:', error.message);
   }
-});
+} else {
+  console.warn('⚠️ Email credentials not found. Email features will be disabled.');
+}
 
-// Configure Twilio client
-const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+// Configure Twilio client - conditional initialization
+let twilioClient = null;
+if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+  try {
+    twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    console.log('✅ Twilio client initialized successfully');
+  } catch (error) {
+    console.warn('⚠️ Twilio client initialization failed:', error.message);
+  }
+} else {
+  console.warn('⚠️ Twilio credentials not found. SMS features will be disabled.');
+}
 
 // Generate a random 6-digit OTP
 const generateOTP = () => {
@@ -90,46 +110,62 @@ export const requestChangeLanguage = async (req, res) => {
 
     // Send OTP via email for French, SMS for others
     if (method === 'email') {
-      if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+      if (!transporter) {
         // In development, log the OTP instead of sending email
         console.log(`[DEV MODE] Email OTP for ${user.email}: ${otp}`);
         devModeOtp = otp;
         otpSent = true;
       } else {
-        const mailOptions = {
-          from: process.env.EMAIL_USER,
-          to: user.email,
-          subject: 'Language Change Verification - StackOverflow Clone',
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #f48024;">Language Change Verification</h2>
-              <p>Hello ${user.name},</p>
-              <p>You requested to change your language to French. Please use the following OTP to verify:</p>
-              <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0; text-align: center;">
-                <strong style="font-size: 24px; letter-spacing: 3px;">${otp}</strong>
+        try {
+          const mailOptions = {
+            from: process.env.EMAIL_USER,
+            to: user.email,
+            subject: 'Language Change Verification - StackOverflow Clone',
+            html: `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #f48024;">Language Change Verification</h2>
+                <p>Hello ${user.name},</p>
+                <p>You requested to change your language to French. Please use the following OTP to verify:</p>
+                <div style="background-color: #f4f4f4; padding: 15px; border-radius: 5px; margin: 20px 0; text-align: center;">
+                  <strong style="font-size: 24px; letter-spacing: 3px;">${otp}</strong>
+                </div>
+                <p>This OTP will expire in 10 minutes.</p>
+                <p>If you did not request this change, please ignore this email.</p>
+                <p>Best regards,<br>StackOverflow Clone Team</p>
               </div>
-              <p>This OTP will expire in 10 minutes.</p>
-              <p>If you did not request this change, please ignore this email.</p>
-              <p>Best regards,<br>StackOverflow Clone Team</p>
-            </div>
-          `
-        };
-        await transporter.sendMail(mailOptions);
-        otpSent = true;
+            `
+          };
+          await transporter.sendMail(mailOptions);
+          otpSent = true;
+        } catch (error) {
+          console.error('Error sending email OTP:', error);
+          // Fallback to dev mode
+          console.log(`[DEV MODE] Email OTP for ${user.email}: ${otp}`);
+          devModeOtp = otp;
+          otpSent = true;
+        }
       }
     } else if (method === 'sms' && user.phone) {
-      if (!process.env.TWILIO_ACCOUNT_SID || !process.env.TWILIO_AUTH_TOKEN || !process.env.TWILIO_PHONE_NUMBER) {
+      if (!twilioClient || !process.env.TWILIO_PHONE_NUMBER) {
         // In development, log the OTP instead of sending SMS
         console.log(`[DEV MODE] SMS OTP for ${user.phone}: ${otp}`);
         devModeOtp = otp;
         otpSent = true;
       } else {
-        await twilioClient.messages.create({
-          body: `Your StackOverflow Clone language change OTP is: ${otp}. This OTP expires in 10 minutes.`,
-          from: process.env.TWILIO_PHONE_NUMBER,
-          to: user.phone
-        });
-        otpSent = true;
+        try {
+          await twilioClient.messages.create({
+            body: `Your StackOverflow Clone language change OTP is: ${otp}. This OTP expires in 10 minutes.`,
+            from: process.env.TWILIO_PHONE_NUMBER,
+            to: user.phone
+          });
+          otpSent = true;
+        } catch (error) {
+          console.error('Error sending SMS OTP:', error);
+          // Fallback to dev mode
+          console.log(`[DEV MODE] SMS OTP for ${user.phone}: ${otp}`);
+          devModeOtp = otp;
+          otpSent = true;
+        }
       }
     } else {
       return res.status(400).json({ success: false, message: 'Invalid verification method or missing phone number' });

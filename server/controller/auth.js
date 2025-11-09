@@ -6,14 +6,24 @@ import { recordLoginAttempt } from './loginHistory.js';
 import nodemailer from 'nodemailer';
 import { Op } from 'sequelize';
 
-// Configure email transporter
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+// Configure email transporter - conditional initialization
+let transporter = null;
+if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+  try {
+    transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+    console.log('✅ Email transporter initialized successfully (auth controller)');
+  } catch (error) {
+    console.warn('⚠️ Email transporter initialization failed:', error.message);
   }
-});
+} else {
+  console.warn('⚠️ Email credentials not found. Email features will be disabled.');
+}
 
 // Generate a random 6-digit OTP
 const generateOTP = () => {
@@ -129,11 +139,20 @@ export const Login = async (req, res) => {
         `
       };
 
-      await transporter.sendMail(mailOptions);
+      if (transporter) {
+        try {
+          await transporter.sendMail(mailOptions);
+        } catch (error) {
+          console.error('Error sending email OTP:', error);
+          // Continue even if email fails
+        }
+      } else {
+        console.warn('Email transporter not configured. OTP verification disabled.');
+      }
       
       return res.status(200).json({ 
-        message: "OTP sent to your email. Please verify to complete login.",
-        requiresOTP: true,
+        message: transporter ? "OTP sent to your email. Please verify to complete login." : "Email not configured. Please contact administrator.",
+        requiresOTP: transporter ? true : false,
         userId: exisitinguser.id
       });
     }

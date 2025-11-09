@@ -5,17 +5,37 @@ import twilio from 'twilio';
 import { Op } from 'sequelize';
 import bcrypt from 'bcryptjs';
 
-// Configure email transporter
-const transporter = createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+// Configure email transporter - conditional initialization
+let transporter = null;
+if (process.env.EMAIL_USER && process.env.EMAIL_PASS) {
+  try {
+    transporter = createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS
+      }
+    });
+    console.log('✅ Email transporter initialized successfully (password reset controller)');
+  } catch (error) {
+    console.warn('⚠️ Email transporter initialization failed:', error.message);
   }
-});
+} else {
+  console.warn('⚠️ Email credentials not found. Email features will be disabled.');
+}
 
-// Configure SMS client
-const smsClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+// Configure SMS client - conditional initialization
+let smsClient = null;
+if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+  try {
+    smsClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+    console.log('✅ SMS client initialized successfully (password reset controller)');
+  } catch (error) {
+    console.warn('⚠️ SMS client initialization failed:', error.message);
+  }
+} else {
+  console.warn('⚠️ Twilio credentials not found. SMS features will be disabled.');
+}
 
 // Generate random password (only uppercase and lowercase letters, no special characters or numbers)
 const generateRandomPassword = () => {
@@ -169,11 +189,19 @@ const sendResetEmail = async (email, name, newPassword, resetToken) => {
     `
   };
 
+  if (!transporter) {
+    console.warn('Email transporter not configured. Skipping email send.');
+    return;
+  }
   await transporter.sendMail(mailOptions);
 };
 
 // Send reset SMS
 const sendResetSMS = async (phone, name, newPassword, resetToken) => {
+  if (!smsClient || !process.env.TWILIO_PHONE_NUMBER) {
+    console.warn('SMS client not configured. Skipping SMS send.');
+    return;
+  }
   const message = `Hello ${name}, your StackOverflow Clone password has been reset. Your new password is: ${newPassword}. Please change it after logging in. This password expires in 1 hour.`;
   
   await smsClient.messages.create({
@@ -283,11 +311,19 @@ const sendNewPasswordEmail = async (email, name, newPassword) => {
     `
   };
 
+  if (!transporter) {
+    console.warn('Email transporter not configured. Skipping email send.');
+    return;
+  }
   await transporter.sendMail(mailOptions);
 };
 
 // Send new password SMS
 const sendNewPasswordSMS = async (phone, name, newPassword) => {
+  if (!smsClient || !process.env.TWILIO_PHONE_NUMBER) {
+    console.warn('SMS client not configured. Skipping SMS send.');
+    return;
+  }
   const message = `Hello ${name}, your StackOverflow Clone password has been reset. Your new password is: ${newPassword}. Please change it after logging in.`;
   
   await smsClient.messages.create({
