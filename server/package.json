@@ -22,12 +22,14 @@
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
     "nodemailer": "^7.0.10",
-    "nodemon": "^3.1.10",
     "razorpay": "^2.9.6",
     "sequelize": "^6.37.7",
     "sqlite3": "^5.1.7",
     "stripe": "^19.3.0",
     "twilio": "^5.10.4",
     "ua-parser-js": "^2.0.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
   }
 }

@@ -26,8 +26,8 @@ Render is an excellent platform for hosting your Express.js backend. It offers a
 3. **Branch**: Select the branch to deploy (usually `main` or `master`)
 4. **Root Directory**: Set to `server`
 5. **Runtime**: Select `Node`
-6. **Build Command**: `npm install`
-7. **Start Command**: `npm start` (or `node index.js` for production)
+6. **Build Command**: `npm install --production=false` (or just `npm install`)
+7. **Start Command**: `npm start` (this will run `node index.js` - DO NOT use nodemon)
 
 ### Environment Variables
 
@@ -273,6 +273,28 @@ If your build takes too long:
 2. Remove unused dependencies
 3. Use `npm ci` instead of `npm install` for faster builds
 4. Consider using `.npmrc` for faster installs
+
+### Nodemon Permission Denied Error
+
+**Issue**: `sh: 1: nodemon: Permission denied`
+
+**Solution**:
+1. Make sure `package.json` has the correct start script:
+   ```json
+   "scripts": {
+     "start": "node index.js",
+     "dev": "nodemon index.js"
+   }
+   ```
+2. Ensure `nodemon` is in `devDependencies`, not `dependencies`:
+   ```json
+   "devDependencies": {
+     "nodemon": "^3.1.10"
+   }
+   ```
+3. In Render dashboard, verify the **Start Command** is set to `npm start` (NOT `nodemon index.js`)
+4. If using `render.yaml`, ensure `startCommand` is `npm start`
+5. Redeploy after making these changes
 
 ## Free Tier Limits
 
